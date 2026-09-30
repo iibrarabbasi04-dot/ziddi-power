@@ -31,39 +31,38 @@ export const bots = new Map();
 const norm = (j) => (j || '').split(':')[0].split('@')[0];
 const fmtTime = (s) => `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m ${Math.floor(s % 60)}s`;
 
-// ---------- SESSION SAVE / RESTORE (MongoDB) ----------
+// ---------- SESSION SAVE / RESTORE (Upstash Redis, free) ----------
 // Render free plan mein files har deploy par mit jati hain, isliye session
-// MongoDB mein save hota hai aur bot start hote hi wapas aa jata hai.
-// Render > Environment mein MONGO_URL set karo. Na ho to purana tareeqa chalega.
-let _col = null;
-async function db() {
-  if (!process.env.MONGO_URL) return null;
-  if (_col) return _col;
-  try {
-    const { MongoClient } = await import('mongodb');
-    const client = new MongoClient(process.env.MONGO_URL);
-    await client.connect();
-    const d = client.db('ziddi_power');
-    _col = { meta: d.collection('sessions'), files: d.collection('files') };
-    return _col;
-  } catch (e) {
-    console.error('MongoDB connect nahi hua:', e?.message);
-    return null;
-  }
+// Upstash mein save hota hai aur bot start hote hi wapas aa jata hai.
+// Render > Environment mein UPSTASH_REDIS_REST_URL aur UPSTASH_REDIS_REST_TOKEN set karo.
+// Na hon to purana tareeqa chalega. Koi extra npm package nahi chahiye.
+const REDIS_URL = (process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/$/, '');
+const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || '';
+const hasDb = () => !!(REDIS_URL && REDIS_TOKEN);
+
+async function redis(cmds) {
+  const r = await fetch(REDIS_URL + '/pipeline', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + REDIS_TOKEN, 'Content-Type': 'application/json' },
+    body: JSON.stringify(cmds),
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!r.ok) throw new Error('Redis error ' + r.status);
+  return (await r.json()).map((x) => { if (x.error) throw new Error(x.error); return x.result; });
 }
+const pairsOf = (flat) => { const o = {}; for (let i = 0; i < (flat || []).length; i += 2) o[flat[i]] = flat[i + 1]; return o; };
 
 const seenFiles = new Map(); // key -> Map(fileName -> signature)
 const timers = new Map();
 
 async function backupSession(key, dir) {
-  const c = await db();
-  if (!c) return;
+  if (!hasDb()) return;
   if (!bots.get(key)?.sock?.authState?.creds?.registered) return; // pairing poori hone se pehle save nahi
   let names;
   try { names = fs.readdirSync(dir); } catch { return; }
   const old = seenFiles.get(key) || new Map();
   const next = new Map(old);
-  const ops = [];
+  const cmds = [];
   for (const n of names) {
     const p = path.join(dir, n);
     let st;
@@ -71,60 +70,54 @@ async function backupSession(key, dir) {
     if (!st.isFile()) continue;
     const sig = st.mtimeMs + ':' + st.size;
     if (old.get(n) === sig) continue;
-    ops.push({ updateOne: { filter: { _id: `${key}::${n}` }, update: { $set: { key, name: n, data: fs.readFileSync(p, 'utf8') } }, upsert: true } });
+    cmds.push(['HSET', 'zp:f:' + key, n, fs.readFileSync(p, 'utf8')]);
     next.set(n, sig);
   }
   for (const n of old.keys()) {
-    if (!names.includes(n)) {
-      ops.push({ deleteOne: { filter: { _id: `${key}::${n}` } } });
-      next.delete(n);
-    }
+    if (!names.includes(n)) { cmds.push(['HDEL', 'zp:f:' + key, n]); next.delete(n); }
   }
-  await c.meta.updateOne({ _id: key }, { $set: { dir } }, { upsert: true });
-  if (ops.length) await c.files.bulkWrite(ops);
+  cmds.unshift(['HSET', 'zp:meta', key, dir]);
+  for (let i = 0; i < cmds.length; i += 40) await redis(cmds.slice(i, i + 40));
   seenFiles.set(key, next);
 }
 
 function scheduleBackup(key, dir) {
   clearTimeout(timers.get(key));
-  timers.set(key, setTimeout(() => backupSession(key, dir).catch(() => {}), 3000));
+  timers.set(key, setTimeout(() => backupSession(key, dir).catch((e) => console.error('Backup fail:', e?.message)), 3000));
 }
 
 async function restoreSession(key, dir) {
-  const c = await db();
-  if (!c) return false;
+  if (!hasDb()) return false;
   if (fs.existsSync(path.join(dir, 'creds.json'))) return true;
-  const docs = await c.files.find({ key }).toArray();
-  if (!docs.length) return false;
+  const files = pairsOf((await redis([['HGETALL', 'zp:f:' + key]]))[0]);
+  const names = Object.keys(files);
+  if (!names.includes('creds.json')) return false;
   fs.mkdirSync(dir, { recursive: true });
-  for (const d of docs) fs.writeFileSync(path.join(dir, d.name), d.data);
+  for (const n of names) fs.writeFileSync(path.join(dir, n), files[n]);
   return true;
 }
 
 async function forgetSession(key) {
   seenFiles.delete(key);
   clearTimeout(timers.get(key));
-  const c = await db();
-  if (!c) return;
-  await c.files.deleteMany({ key });
-  await c.meta.deleteOne({ _id: key });
+  if (!hasDb()) return;
+  await redis([['DEL', 'zp:f:' + key], ['HDEL', 'zp:meta', key]]);
 }
 
 // Bot start hote hi saare saved sessions wapas chalu
 export async function restoreAll() {
-  const c = await db();
-  if (!c) return;
-  const list = await c.meta.find({}).toArray();
-  for (const s of list) {
+  if (!hasDb()) return;
+  const meta = pairsOf((await redis([['HGETALL', 'zp:meta']]))[0]);
+  for (const [key, dir] of Object.entries(meta)) {
     try {
-      if (bots.has(s._id)) continue;
-      if (!(await restoreSession(s._id, s.dir))) continue;
-      if (bots.has(s._id)) continue;
-      await startBot(s._id, s.dir, { flags: { linked: true } });
-      console.log('Session restore hua:', s._id);
+      if (bots.has(key)) continue;
+      if (!(await restoreSession(key, dir))) continue;
+      if (bots.has(key)) continue;
+      await startBot(key, dir, { flags: { linked: true } });
+      console.log('Session restore hua:', key);
       await delay(1500);
     } catch (e) {
-      console.error('Restore fail', s._id, e?.message);
+      console.error('Restore fail', key, e?.message);
     }
   }
 }
@@ -306,12 +299,36 @@ async function getJson(url, opts = {}) {
 }
 const isImageUrl = (u) => /\.(jpe?g|png|webp)(\?|$)/i.test(u);
 
-// Naam se YouTube par search (bina link ke)
+// Naam se YouTube par search (bina link ke, koi npm package nahi)
+function findVideo(o) {
+  if (!o || typeof o !== 'object') return null;
+  if (o.videoRenderer?.videoId) return o.videoRenderer;
+  for (const k in o) { const f = findVideo(o[k]); if (f) return f; }
+  return null;
+}
 async function ytSearch(q) {
-  let yts;
-  try { yts = (await import('yt-search')).default; }
-  catch { throw new Error('yt-search package install nahi hai (package.json mein add karo)'); }
-  return (await yts(q)).videos?.[0] || null;
+  const r = await fetch('https://www.youtube.com/results?hl=en&sp=EgIQAQ%3D%3D&search_query=' + encodeURIComponent(q), {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+      'Accept-Language': 'en-US,en;q=0.9',
+      Cookie: 'CONSENT=YES+1; SOCS=CAI',
+    },
+    signal: AbortSignal.timeout(20000),
+  });
+  const html = await r.text();
+  const raw = html.match(/var ytInitialData = (\{.*?\});<\/script>/s)?.[1];
+  if (!raw) throw new Error('YouTube search nahi ho saki (YouTube ne block kiya ho sakta hai)');
+  const v = findVideo(JSON.parse(raw).contents);
+  if (!v) return null;
+  const ts = v.lengthText?.simpleText || '0:00';
+  return {
+    url: 'https://www.youtube.com/watch?v=' + v.videoId,
+    title: v.title?.runs?.[0]?.text || '',
+    seconds: ts.split(':').reduce((a, p) => a * 60 + Number(p), 0),
+    timestamp: ts,
+    thumbnail: 'https://i.ytimg.com/vi/' + v.videoId + '/hqdefault.jpg',
+    author: { name: v.ownerText?.runs?.[0]?.text || '' },
+  };
 }
 // Cobalt se direct download link lena
 async function cobaltGet(link, body = {}) {
