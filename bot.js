@@ -1,5 +1,4 @@
 // Ziddi Power - bot ka code
-mkdir -p /mnt/user-data/outputs && cat > /mnt/user-data/outputs/bot.js <<'EOF'
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -308,7 +307,7 @@ function buildMenu(entry) {
     `│ 🌐 *MODE:* ${entry.mode}\n` +
     `│ 📊 *COMMANDS:* ${total}\n` +
     `│ ⏳ *RUNTIME:* ${fmtTime((Date.now() - entry.started) / 1000)}\n` +
-    `│ 🏷 *VERSION:* ${CFG.version}\n` + tail;
+    `│ 🏷️ *VERSION:* ${CFG.version}\n` + tail;
   for (const [name, cmds] of Object.entries(MENU)) {
     t += `┌─────── 〔 *${name}* 〕 ───────•┄┄●-○\n`;
     t += [...new Set(cmds)].map((c) => `│ ⚡ \`${c.toUpperCase()}\``).join('\n') + '\n' + tail;
@@ -412,7 +411,7 @@ async function ytDownload(x, isVideo) {
   const maxSec = isVideo ? 900 : 1800;
   if (v.seconds > maxSec) return reply(`Ye bohat lamba hai (${v.timestamp}). ${isVideo ? '15' : '30'} minute tak ki hi milegi.`);
   if (!given) {
-    await sock.sendMessage(chat, { image: { url: v.thumbnail }, caption: `${isVideo ? '🎬' : '🎧'} *${v.title}*\n👤 ${v.author?.name || ''}\n⏱ ${v.timestamp}\n\nDownload ho raha hai... ⏳` }, { quoted: m });
+    await sock.sendMessage(chat, { image: { url: v.thumbnail }, caption: `${isVideo ? '🎬' : '🎧'} *${v.title}*\n👤 ${v.author?.name || ''}\n⏱️ ${v.timestamp}\n\nDownload ho raha hai... ⏳` }, { quoted: m });
   }
   const url = await cobaltGet(v.url, isVideo ? { videoQuality: '720' } : { downloadMode: 'audio', audioFormat: 'mp3' });
   if (isVideo) return sock.sendMessage(chat, { video: { url }, caption: `🎬 ${v.title || 'Video'}\n\n_${CFG.name}_` }, { quoted: m });
@@ -504,7 +503,7 @@ const STYLES = {
   overline: (s) => [...s].map((x) => x + '\u0305').join(''),
   strikethrough: (s) => [...s].map((x) => x + '\u0336').join(''),
   slash: (s) => [...s].map((x) => x + '\u0338').join(''),
-  firetext: (s) => `🔥 ${s} 🔥`, startext: (s) => `⭐ ${s} ⭐`, hearttext: (s) => `❤ ${s} ❤`, cloudtext: (s) => `☁ ${s} ☁`,
+  firetext: (s) => `🔥 ${s} 🔥`, startext: (s) => `⭐ ${s} ⭐`, hearttext: (s) => `❤️ ${s} ❤️`, cloudtext: (s) => `☁️ ${s} ☁️`,
   matrix: (s) => '```' + [...s].join(' ') + '```',
 };
 const FANCY = ['✧', '☆', '★', '✦', '❖', '♛', '☠', '⚡', '♥', '✿'];
@@ -625,11 +624,11 @@ const LOVE_LINES = w(`lafzmohabbat pehlinazar dillagi dhadkan pehlaakhat ziddidi
   andhaishq dua khwaabon gayrate`);
 LOVE_LINES.forEach((n) => add(n, (x) => {
   const t = x.targetOf();
-  x.reply(`💌 *${n}*\n${pick(['Dil ki baat dil hi jaanta hai ❤', 'Mohabbat me sab jaiz hai 😉', 'Aaj ka din tumhara hai ✨', 'Kisi ki yaad me ho kya? 🥹'])}${t ? '\n@' + norm(t) : ''}`, { mentions: t ? [t] : [] });
+  x.reply(`💌 *${n}*\n${pick(['Dil ki baat dil hi jaanta hai ❤️', 'Mohabbat me sab jaiz hai 😉', 'Aaj ka din tumhara hai ✨', 'Kisi ki yaad me ho kya? 🥹'])}${t ? '\n@' + norm(t) : ''}`, { mentions: t ? [t] : [] });
 }));
 ['character', 'fun', 'rain', 'fight', 'puzzle', 'story', 'transform', 'race', 'weathercast', 'emojimenu', 'technologia', 'lurk', 'shoot', 'sleep', 'clap', 'shrug', 'stare', 'think', 'feed', 'wag', 'teehee', 'shocked', 'bleh', 'spin', 'shake', 'run', 'nod', 'nope', 'lappillow', 'pout', 'blowkiss', 'salute', 'thumbsup', 'laugh', 'tableflip', 'kids', 'kabedon', 'baka', 'carry', 'peck', 'sip', 'tickle', 'punch', 'handshake', 'emoji', 'shapar', 'fakevote', 'livevote', 'fakesubs', 'welcomevote', 'membergrowth', 'fakepoll', 'votelist']
   .forEach((n) => add(n, (x) => {
-    const e = { rain: '🌧', fight: '🥊', race: '🏁', sleep: '😴', clap: '👏', shrug: '🤷', stare: '👀', think: '🤔', laugh: '😂', salute: '🫡', thumbsup: '👍', run: '🏃', shoot: '🔫💦', tableflip: '(╯°□°）╯︵ ┻━┻', spin: '🌀', nod: '🙂↕', nope: '🙅' }[n] || '✨';
+    const e = { rain: '🌧️', fight: '🥊', race: '🏁', sleep: '😴', clap: '👏', shrug: '🤷', stare: '👀', think: '🤔', laugh: '😂', salute: '🫡', thumbsup: '👍', run: '🏃', shoot: '🔫💦', tableflip: '(╯°□°）╯︵ ┻━┻', spin: '🌀', nod: '🙂‍↕️', nope: '🙅' }[n] || '✨';
     const t = x.targetOf();
     x.reply(`${e} *${n}*${t ? ' → @' + norm(t) : ''}\n${x.args || ''}`.trim(), { mentions: t ? [t] : [] });
   }));
@@ -637,14 +636,14 @@ LOVE_LINES.forEach((n) => add(n, (x) => {
 // Emoji animations
 const ANIMS = {
   happy: ['😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😇'],
-  heart: ['❤', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '💖'],
+  heart: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '💖'],
   angry: ['😡', '😠', '🤬', '😤', '😾', '👿', '💢'],
   sad: ['🥺', '😟', '😕', '😔', '😢', '😭', '💔'],
-  shy: ['😳', '😊', '🥰', '😚', '🙈', '☺'],
+  shy: ['😳', '😊', '🥰', '😚', '🙈', '☺️'],
   moon: ['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘'],
-  confused: ['😕', '🤔', '🧐', '😵💫', '❓', '🤯'],
-  hot: ['🥵', '🔥', '☀', '🌡', '🥵', '🔥'],
-  nikal: ['🚶', '🚶♂', '🏃', '💨', '👋'],
+  confused: ['😕', '🤔', '🧐', '😵‍💫', '❓', '🤯'],
+  hot: ['🥵', '🔥', '☀️', '🌡️', '🥵', '🔥'],
+  nikal: ['🚶', '🚶‍♂️', '🏃', '💨', '👋'],
   dance: ['💃', '🕺', '💃', '🕺', '🪩'],
 };
 for (const [k, frames] of Object.entries(ANIMS)) add(k, async (x) => {
@@ -652,7 +651,7 @@ for (const [k, frames] of Object.entries(ANIMS)) add(k, async (x) => {
   for (const f of frames.slice(1)) { await delay(700); await x.sock.sendMessage(x.chat, { text: f, edit: s.key }); }
 });
 add('fancy', (x) => x.reply(`✨ ${[...x.args || 'Ziddi'].join(' ')} ✨`));
-add('fixerror', (x) => x.reply('🛠 Error ki puri detail (log) bhejo, phir main dekhta hoon.'));
+add('fixerror', (x) => x.reply('🛠️ Error ki puri detail (log) bhejo, phir main dekhta hoon.'));
 
 // Anime / reactions (waifu.pics, SFW)
 async function wpImage(x, type) {
@@ -702,7 +701,7 @@ add('yts', async (x) => {
   if (!x.args) return x.reply(`Aise likho: ${CFG.prefix}yts naam`);
   const v = await ytSearch(x.args);
   if (!v) return x.reply('Kuch nahi mila.');
-  x.sock.sendMessage(x.chat, { image: { url: v.thumbnail }, caption: `🔎 *${v.title}*\n👤 ${v.author.name}\n⏱ ${v.timestamp}\n${v.url}` }, { quoted: x.m });
+  x.sock.sendMessage(x.chat, { image: { url: v.thumbnail }, caption: `🔎 *${v.title}*\n👤 ${v.author.name}\n⏱️ ${v.timestamp}\n${v.url}` }, { quoted: x.m });
 });
 add('lyrics', async (x) => {
   const [a, ...t] = x.args.split('|').map((s) => s.trim());
@@ -825,7 +824,7 @@ add(['requests', 'accept', 'reject', 'acceptall', 'rejectall'], async (x) => {
   x.reply('Ho gaya ✅ (' + targets.length + ')');
 });
 add('count', async (x) => { const meta = await x.groupOnly(); if (meta) x.reply(`👥 Members: ${meta.participants.length}`); });
-add('antibothelp', (x) => x.reply(`🛡 Guards (admin only):\n${CFG.prefix}antilink on/off\n${CFG.prefix}antimedia on/off\n${CFG.prefix}antispam on/off\n${CFG.prefix}antitagall on/off\n${CFG.prefix}antibot on/off\n\nBot ko group admin banana zaroori hai.`));
+add('antibothelp', (x) => x.reply(`🛡️ Guards (admin only):\n${CFG.prefix}antilink on/off\n${CFG.prefix}antimedia on/off\n${CFG.prefix}antispam on/off\n${CFG.prefix}antitagall on/off\n${CFG.prefix}antibot on/off\n\nBot ko group admin banana zaroori hai.`));
 for (const g of ['antilink', 'antimedia', 'antispam', 'antitagall', 'antibot', 'antistatus']) add(g, async (x) => {
   if (!(await x.adminGate())) return;
   const set = x.entry.g[g];
@@ -887,7 +886,7 @@ add('botname', (x) => { if (!x.isOwner) return x.reply('Sirf owner.'); if (x.arg
 add('ownername', (x) => { if (!x.isOwner) return x.reply('Sirf owner.'); if (x.args) CFG.owner = x.args; x.reply('Owner name: ' + CFG.owner); });
 add('settings', (x) => {
   const s = x.entry.settings;
-  x.reply(`⚙ *Settings*\nMode: ${x.entry.mode}\nPrefix: ${CFG.prefix}\n` + ['autoread', 'autotyping', 'recording', 'statusview', 'statuslike', 'anticall', 'autoreact', 'online', 'autochat'].map((k) => `${k}: ${s[k] ? 'ON' : 'OFF'}`).join('\n'));
+  x.reply(`⚙️ *Settings*\nMode: ${x.entry.mode}\nPrefix: ${CFG.prefix}\n` + ['autoread', 'autotyping', 'recording', 'statusview', 'statuslike', 'anticall', 'autoreact', 'online', 'autochat'].map((k) => `${k}: ${s[k] ? 'ON' : 'OFF'}`).join('\n'));
 });
 add(/* unban templates */ range('unban', 100, 2).concat('unban'), (x) => x.reply(`Support ko ye message bhejo (support@whatsapp.com):\n\n"Hello WhatsApp Team, my number ${x.args || '+XX XXXXXXXXXX'} was banned by mistake. I use WhatsApp only for personal chats and follow the Terms of Service. Please review and restore my account. Thank you."`));
 
@@ -896,7 +895,7 @@ const NEEDS_API = { logo: 'Logo generator API', img: 'Image search API', grub: '
 function needsApi(x) {
   const key = Object.keys(NEEDS_API).find((k) => x.cmd.startsWith(k)) || 'x';
   const src = LOGO_SET.has(x.cmd) ? 'Logo generator API' : NEEDS_API[key] || 'ek external API';
-  return x.reply(`⚠ *${CFG.prefix}${x.cmd}* ke liye ${src} chahiye.\nOwner ne abhi ise connect nahi kiya.`);
+  return x.reply(`⚠️ *${CFG.prefix}${x.cmd}* ke liye ${src} chahiye.\nOwner ne abhi ise connect nahi kiya.`);
 }
 const LOGO_SET = new Set(MENU.LOGO);
 
@@ -925,7 +924,7 @@ async function handle(sock, entry, m) {
       if (S.autotyping) await sock.sendPresenceUpdate('composing', chat);
       else if (S.recording) await sock.sendPresenceUpdate('recording', chat);
       else if (S.online) await sock.sendPresenceUpdate('available');
-      if (S.autoreact) await sock.sendMessage(chat, { react: { text: pick(['❤', '🔥', '😂', '👍', '✨']), key: m.key } });
+      if (S.autoreact) await sock.sendMessage(chat, { react: { text: pick(['❤️', '🔥', '😂', '👍', '✨']), key: m.key } });
     } catch {}
   }
 
@@ -1082,5 +1081,3 @@ async function handle(sock, entry, m) {
 }
 
 restoreAll().catch(() => {});
-EOF
-node --check /mnt/user-data/outputs/bot.js && echo SYNTAX_OK
