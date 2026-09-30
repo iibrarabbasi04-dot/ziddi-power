@@ -31,17 +31,133 @@ export const bots = new Map();
 const norm = (j) => (j || '').split(':')[0].split('@')[0];
 const fmtTime = (s) => `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m ${Math.floor(s % 60)}s`;
 
+// ---------- SESSION SAVE / RESTORE (MongoDB) ----------
+// Render free plan mein files har deploy par mit jati hain, isliye session
+// MongoDB mein save hota hai aur bot start hote hi wapas aa jata hai.
+// Render > Environment mein MONGO_URL set karo. Na ho to purana tareeqa chalega.
+let _col = null;
+async function db() {
+  if (!process.env.MONGO_URL) return null;
+  if (_col) return _col;
+  try {
+    const { MongoClient } = await import('mongodb');
+    const client = new MongoClient(process.env.MONGO_URL);
+    await client.connect();
+    const d = client.db('ziddi_power');
+    _col = { meta: d.collection('sessions'), files: d.collection('files') };
+    return _col;
+  } catch (e) {
+    console.error('MongoDB connect nahi hua:', e?.message);
+    return null;
+  }
+}
+
+const seenFiles = new Map(); // key -> Map(fileName -> signature)
+const timers = new Map();
+
+async function backupSession(key, dir) {
+  const c = await db();
+  if (!c) return;
+  if (!bots.get(key)?.sock?.authState?.creds?.registered) return; // pairing poori hone se pehle save nahi
+  let names;
+  try { names = fs.readdirSync(dir); } catch { return; }
+  const old = seenFiles.get(key) || new Map();
+  const next = new Map(old);
+  const ops = [];
+  for (const n of names) {
+    const p = path.join(dir, n);
+    let st;
+    try { st = fs.statSync(p); } catch { continue; }
+    if (!st.isFile()) continue;
+    const sig = st.mtimeMs + ':' + st.size;
+    if (old.get(n) === sig) continue;
+    ops.push({ updateOne: { filter: { _id: `${key}::${n}` }, update: { $set: { key, name: n, data: fs.readFileSync(p, 'utf8') } }, upsert: true } });
+    next.set(n, sig);
+  }
+  for (const n of old.keys()) {
+    if (!names.includes(n)) {
+      ops.push({ deleteOne: { filter: { _id: `${key}::${n}` } } });
+      next.delete(n);
+    }
+  }
+  await c.meta.updateOne({ _id: key }, { $set: { dir } }, { upsert: true });
+  if (ops.length) await c.files.bulkWrite(ops);
+  seenFiles.set(key, next);
+}
+
+function scheduleBackup(key, dir) {
+  clearTimeout(timers.get(key));
+  timers.set(key, setTimeout(() => backupSession(key, dir).catch(() => {}), 3000));
+}
+
+async function restoreSession(key, dir) {
+  const c = await db();
+  if (!c) return false;
+  if (fs.existsSync(path.join(dir, 'creds.json'))) return true;
+  const docs = await c.files.find({ key }).toArray();
+  if (!docs.length) return false;
+  fs.mkdirSync(dir, { recursive: true });
+  for (const d of docs) fs.writeFileSync(path.join(dir, d.name), d.data);
+  return true;
+}
+
+async function forgetSession(key) {
+  seenFiles.delete(key);
+  clearTimeout(timers.get(key));
+  const c = await db();
+  if (!c) return;
+  await c.files.deleteMany({ key });
+  await c.meta.deleteOne({ _id: key });
+}
+
+// Bot start hote hi saare saved sessions wapas chalu
+export async function restoreAll() {
+  const c = await db();
+  if (!c) return;
+  const list = await c.meta.find({}).toArray();
+  for (const s of list) {
+    try {
+      if (bots.has(s._id)) continue;
+      if (!(await restoreSession(s._id, s.dir))) continue;
+      if (bots.has(s._id)) continue;
+      await startBot(s._id, s.dir, { flags: { linked: true } });
+      console.log('Session restore hua:', s._id);
+      await delay(1500);
+    } catch (e) {
+      console.error('Restore fail', s._id, e?.message);
+    }
+  }
+}
+
+// har 60 second mein backup + deploy band hone se pehle aakhri backup
+setInterval(() => {
+  for (const [k, e] of bots) if (!e.stopped && e.dir) backupSession(k, e.dir).catch(() => {});
+}, 60000).unref();
+process.on('SIGTERM', async () => {
+  try {
+    await Promise.race([
+      Promise.all([...bots].map(([k, e]) => (e.dir ? backupSession(k, e.dir) : null))),
+      new Promise((r) => setTimeout(r, 8000)),
+    ]);
+  } catch {}
+  process.exit(0);
+});
+
 export function stopBot(key, removeDir) {
   const e = bots.get(key);
   if (!e) return;
   e.stopped = true;
   try { e.sock?.ev.removeAllListeners(); e.sock?.end(undefined); } catch {}
   bots.delete(key);
-  if (removeDir) try { fs.rmSync(removeDir, { recursive: true, force: true }); } catch {}
+  if (removeDir) {
+    try { fs.rmSync(removeDir, { recursive: true, force: true }); } catch {}
+    forgetSession(key).catch(() => {});
+  }
 }
 
 export async function startBot(key, dir, opts = {}) {
   const flags = opts.flags || { linked: false };
+  await restoreSession(key, dir).catch(() => {});
   const { state, saveCreds } = await useMultiFileAuthState(dir);
   const { version } = await fetchLatestBaileysVersion();
   const sock = makeWASocket({
@@ -54,8 +170,12 @@ export async function startBot(key, dir, opts = {}) {
   });
   const entry = bots.get(key) || { mode: 'public', anti: new Set(), started: Date.now(), stopped: false };
   entry.sock = sock;
+  entry.dir = dir;
   bots.set(key, entry);
-  sock.ev.on('creds.update', saveCreds);
+  sock.ev.on('creds.update', async () => {
+    await saveCreds();
+    scheduleBackup(key, dir);
+  });
 
   if (!state.creds.registered && opts.onCode) {
     await delay(2500);
@@ -80,6 +200,7 @@ export async function startBot(key, dir, opts = {}) {
       if (entry.stopped) return;
       if (code === DisconnectReason.loggedOut) {
         bots.delete(key);
+        forgetSession(key).catch(() => {});
         try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
         opts.onEnd?.('loggedOut');
       } else if (opts.number && !flags.linked && code !== DisconnectReason.restartRequired) {
@@ -121,7 +242,7 @@ const isAdminIn = (meta, ids) => meta.participants.some((p) => p.admin && idsOf(
 // Nayi command add karo to bas yahan category ki list mein naam likh do.
 const MENU = {
   MAIN: ['menu', 'ping', 'alive', 'owner', 'runtime', 'channel'],
-  DOWNLOADER: ['tiktok', 'aio'],
+  DOWNLOADER: ['song', 'video', 'tiktok', 'aio'],
   'STICKER & MEDIA': ['sticker', 'toimg', 'qr'],
   TOOLS: ['calc', 'time', 'flip', 'dice'],
   GROUP: ['tagall', 'hidetag', 'kick', 'promote', 'demote', 'open', 'close', 'link', 'groupinfo', 'antilink'],
@@ -184,6 +305,27 @@ async function getJson(url, opts = {}) {
   return r.json();
 }
 const isImageUrl = (u) => /\.(jpe?g|png|webp)(\?|$)/i.test(u);
+
+// Naam se YouTube par search (bina link ke)
+async function ytSearch(q) {
+  let yts;
+  try { yts = (await import('yt-search')).default; }
+  catch { throw new Error('yt-search package install nahi hai (package.json mein add karo)'); }
+  return (await yts(q)).videos?.[0] || null;
+}
+// Cobalt se direct download link lena
+async function cobaltGet(link, body = {}) {
+  const api = process.env.COBALT_API;
+  if (!api) throw new Error('COBALT_API set nahi hai (Render > Environment)');
+  const j = await getJson(api, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(process.env.COBALT_KEY ? { Authorization: 'Api-Key ' + process.env.COBALT_KEY } : {}) },
+    body: JSON.stringify({ url: link, ...body }),
+  });
+  if (j.status === 'error') throw new Error(j.error?.code || 'download fail');
+  if (!j.url) throw new Error('Is link se kuch nahi mila');
+  return j.url;
+}
 const isAudioUrl = (u) => /\.(mp3|m4a|opus|ogg|wav)(\?|$)/i.test(u);
 const mediaPayload = (u, caption) =>
   isImageUrl(u) ? { image: { url: u }, caption } : isAudioUrl(u) ? { audio: { url: u }, mimetype: 'audio/mpeg' } : { video: { url: u }, caption };
@@ -262,6 +404,23 @@ async function handle(sock, entry, m) {
       case 'qr': {
         if (!args) return reply(`Aise likho: ${CFG.prefix}qr text ya link`);
         return sock.sendMessage(chat, { image: await QRCode.toBuffer(args, { width: 512, margin: 2 }), caption: 'QR ready' }, { quoted: m });
+      }
+
+      case 'song': case 'play': case 'video': {
+        const isVideo = cmd === 'video';
+        if (!args) return reply(`Aise likho: ${CFG.prefix}${cmd} ${isVideo ? 'video' : 'gane'} ka naam\nMisal: ${CFG.prefix}${cmd} tum hi ho`);
+        await reply('Dhoond raha hoon... 🔎');
+        const given = args.match(URL_RE)?.[0];
+        const v = given ? { url: given, title: '', seconds: 0 } : await ytSearch(args);
+        if (!v) return reply('Kuch nahi mila. Naam badal kar dobara try karo.');
+        const maxSec = isVideo ? 900 : 1800;
+        if (v.seconds > maxSec) return reply(`Ye bohat lamba hai (${v.timestamp}). ${isVideo ? '15' : '30'} minute tak ki hi milegi.`);
+        if (!given) {
+          await sock.sendMessage(chat, { image: { url: v.thumbnail }, caption: `${isVideo ? '🎬' : '🎧'} *${v.title}*\n👤 ${v.author?.name || ''}\n⏱️ ${v.timestamp}\n\nDownload ho raha hai... ⏳` }, { quoted: m });
+        }
+        const url = await cobaltGet(v.url, isVideo ? { videoQuality: '720' } : { downloadMode: 'audio', audioFormat: 'mp3' });
+        if (isVideo) return sock.sendMessage(chat, { video: { url }, caption: `🎬 ${v.title || 'Video'}\n\n_${CFG.name}_` }, { quoted: m });
+        return sock.sendMessage(chat, { audio: { url }, mimetype: 'audio/mpeg', fileName: `${v.title || 'song'}.mp3` }, { quoted: m });
       }
 
       case 'tiktok': case 'tt': {
@@ -366,3 +525,6 @@ async function handle(sock, entry, m) {
     return reply('Command fail hui: ' + (e?.message || 'unknown error'));
   }
 }
+
+// Server start hote hi saved sessions wapas chalu karo
+restoreAll().catch(() => {});
