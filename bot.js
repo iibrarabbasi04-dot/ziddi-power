@@ -19,6 +19,8 @@ export const CFG = {
   prefix: '.',
   name: 'Ziddi Power',
   owner: 'Ziddi Boy',
+  version: '1.0.0',
+  menuImage: path.join(process.cwd(), 'public', 'menu.jpg'),
   channel: process.env.CHANNEL_LINK || 'https://whatsapp.com/channel/0029VbDdwnhKGGGOSd9rHl1D',
   extraOwners: (process.env.OWNER || '').split(',').map((x) => x.replace(/\D/g, '')).filter(Boolean),
 };
@@ -64,6 +66,10 @@ export async function startBot(key, dir, opts = {}) {
   sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
     if (connection === 'open') {
       entry.number = norm(sock.user.id);
+      if (!entry.announced) {
+        entry.announced = true;
+        sendActivated(sock, entry).catch(() => {});
+      }
       if (!flags.linked && opts.onLinked) {
         flags.linked = true;
         opts.onLinked(sock, entry).catch(() => {});
@@ -111,13 +117,76 @@ async function getMedia(sock, m, types) {
 const idsOf = (p) => [p.id, p.phoneNumber, p.jid, p.lid].filter(Boolean).map(norm);
 const isAdminIn = (meta, ids) => meta.participants.some((p) => p.admin && idsOf(p).some((x) => ids.map(norm).includes(x)));
 
+// ---------- MENU ----------
+// Nayi command add karo to bas yahan category ki list mein naam likh do.
 const MENU = {
-  Main: ['menu', 'ping', 'alive', 'owner', 'runtime', 'channel'],
-  'Sticker aur media': ['sticker', 'toimg', 'qr'],
-  Tools: ['calc', 'time', 'flip', 'dice'],
-  Group: ['tagall', 'hidetag', 'kick', 'promote', 'demote', 'open', 'close', 'link', 'groupinfo', 'antilink'],
-  Owner: ['mode', 'follow'],
+  MAIN: ['menu', 'ping', 'alive', 'owner', 'runtime', 'channel'],
+  DOWNLOADER: ['tiktok', 'aio'],
+  'STICKER & MEDIA': ['sticker', 'toimg', 'qr'],
+  TOOLS: ['calc', 'time', 'flip', 'dice'],
+  GROUP: ['tagall', 'hidetag', 'kick', 'promote', 'demote', 'open', 'close', 'link', 'groupinfo', 'antilink'],
+  OWNER: ['mode', 'follow'],
 };
+
+function buildMenu(entry) {
+  const total = Object.values(MENU).flat().length;
+  const tail = '└────────────────────────\n┄┄●-○\n\n';
+  let t = `✨ *${CFG.name.toUpperCase()} MULTI-DEVICE* ✨\n\n` +
+    `┌─────── 〔 *INFO BOX* 〕 ───────•┄┄●-○\n` +
+    `│ 👑 *OWNER:* ${CFG.owner}\n` +
+    `│ 🔰 *PREFIX:* ${CFG.prefix}\n` +
+    `│ 🌐 *MODE:* ${entry.mode}\n` +
+    `│ 📊 *COMMANDS:* ${total}\n` +
+    `│ ⏳ *RUNTIME:* ${fmtTime((Date.now() - entry.started) / 1000)}\n` +
+    `│ 🏷️ *VERSION:* ${CFG.version}\n` + tail;
+  for (const [name, cmds] of Object.entries(MENU)) {
+    t += `┌─────── 〔 *${name}* 〕 ───────•┄┄●-○\n`;
+    t += cmds.map((c) => `│ ⚡ \`${c.toUpperCase()}\``).join('\n') + '\n' + tail;
+  }
+  return t.trimEnd();
+}
+
+const readMenuImage = () => { try { return fs.readFileSync(CFG.menuImage); } catch { return null; } };
+
+// "Forwarded many times + View channel" wala look
+async function channelContext(sock, entry) {
+  try {
+    if (!entry.channelId) entry.channelId = (await sock.newsletterMetadata('invite', CHANNEL_CODE)).id;
+    return {
+      forwardingScore: 999,
+      isForwarded: true,
+      forwardedNewsletterMessageInfo: { newsletterJid: entry.channelId, newsletterName: CFG.name, serverMessageId: -1 },
+    };
+  } catch { return undefined; }
+}
+
+async function sendMenu(sock, chat, m, entry) {
+  const caption = buildMenu(entry);
+  const image = readMenuImage();
+  const contextInfo = await channelContext(sock, entry);
+  const content = image ? { image, caption, contextInfo } : { text: caption, contextInfo };
+  return sock.sendMessage(chat, content, { quoted: m });
+}
+
+// Bot connect hote hi apne number par "Activated" message
+async function sendActivated(sock, entry) {
+  const image = readMenuImage();
+  const caption = `🤖 *${CFG.name.toUpperCase()} Activated*\n\nType ${CFG.prefix}menu for commands\n\n🔥 Version: ${CFG.version}`;
+  const to = norm(sock.user.id) + '@s.whatsapp.net';
+  await sock.sendMessage(to, image ? { image, caption } : { text: caption });
+}
+
+// ---------- DOWNLOADER helpers ----------
+const URL_RE = /https?:\/\/\S+/i;
+async function getJson(url, opts = {}) {
+  const r = await fetch(url, { ...opts, signal: AbortSignal.timeout(30000) });
+  if (!r.ok) throw new Error('Server ne jawab nahi diya (' + r.status + ')');
+  return r.json();
+}
+const isImageUrl = (u) => /\.(jpe?g|png|webp)(\?|$)/i.test(u);
+const isAudioUrl = (u) => /\.(mp3|m4a|opus|ogg|wav)(\?|$)/i.test(u);
+const mediaPayload = (u, caption) =>
+  isImageUrl(u) ? { image: { url: u }, caption } : isAudioUrl(u) ? { audio: { url: u }, mimetype: 'audio/mpeg' } : { video: { url: u }, caption };
 
 async function handle(sock, entry, m) {
   if (!m.message || m.key.remoteJid === 'status@broadcast') return;
@@ -167,11 +236,8 @@ async function handle(sock, entry, m) {
 
   try {
     switch (cmd) {
-      case 'menu': case 'help': {
-        let t = `╭─「 *${CFG.name.toUpperCase()}* 」\n│ Owner: ${CFG.owner}\n│ Prefix: ${CFG.prefix}\n│ Mode: ${entry.mode}\n╰────────\n`;
-        for (const [k, v] of Object.entries(MENU)) t += `\n*${k}*\n${v.map((c) => CFG.prefix + c).join('  ')}\n`;
-        return reply(t);
-      }
+      case 'menu': case 'help':
+        return sendMenu(sock, chat, m, entry);
       case 'ping': {
         const t0 = Date.now();
         const s = await reply('Pong...');
@@ -196,6 +262,40 @@ async function handle(sock, entry, m) {
       case 'qr': {
         if (!args) return reply(`Aise likho: ${CFG.prefix}qr text ya link`);
         return sock.sendMessage(chat, { image: await QRCode.toBuffer(args, { width: 512, margin: 2 }), caption: 'QR ready' }, { quoted: m });
+      }
+
+      case 'tiktok': case 'tt': {
+        const link = args.match(URL_RE)?.[0];
+        if (!link) return reply(`Aise likho: ${CFG.prefix}tiktok TikTok ka link`);
+        await reply('Download ho raha hai... ⏳');
+        const d = (await getJson('https://www.tikwm.com/api/?hd=1&url=' + encodeURIComponent(link)))?.data;
+        if (!d) return reply('Video nahi mili. Link check karo (video public honi chahiye).');
+        const caption = `🎵 ${d.title || 'TikTok'}\n\n_${CFG.name}_`;
+        if (d.images?.length) {
+          for (const img of d.images.slice(0, 5)) await sock.sendMessage(chat, { image: { url: img }, caption }, { quoted: m });
+          return;
+        }
+        return sock.sendMessage(chat, { video: { url: d.hdplay || d.play }, caption }, { quoted: m });
+      }
+      case 'aio': case 'dl': {
+        const link = args.match(URL_RE)?.[0];
+        if (!link) return reply(`Aise likho: ${CFG.prefix}aio link\n(Instagram, Facebook, Twitter/X, YouTube waghera)`);
+        const api = process.env.COBALT_API;
+        if (!api) return reply('AIO downloader abhi set nahi hai. Owner ko Render mein COBALT_API set karni hogi.');
+        await reply('Download ho raha hai... ⏳');
+        const j = await getJson(api, {
+          method: 'POST',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(process.env.COBALT_KEY ? { Authorization: 'Api-Key ' + process.env.COBALT_KEY } : {}) },
+          body: JSON.stringify({ url: link }),
+        });
+        if (j.status === 'error') return reply('Download nahi ho saka: ' + (j.error?.code || 'unknown'));
+        const caption = `✅ ${CFG.name}`;
+        if (j.status === 'picker') {
+          for (const it of (j.picker || []).slice(0, 5)) await sock.sendMessage(chat, mediaPayload(it.url, caption), { quoted: m });
+          return;
+        }
+        if (!j.url) return reply('Is link se kuch nahi mila.');
+        return sock.sendMessage(chat, mediaPayload(j.url, caption), { quoted: m });
       }
 
       case 'calc': {
