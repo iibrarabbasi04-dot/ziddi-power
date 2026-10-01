@@ -1,3 +1,4 @@
+
 // Ziddi Power - website + pairing + bot, sab ek server me
 import express from 'express';
 import fs from 'fs';
@@ -14,11 +15,18 @@ const MAX_BOTS = Number(process.env.MAX_BOTS || 20);
 const PREFIX = 'ZIDDI:~';
 fs.mkdirSync(SESS, { recursive: true });
 
+// FIX 1: koi bhi ghalti poora server crash na kare (crash = bot offline = 0 online)
+process.on('uncaughtException', (e) => console.log('uncaughtException:', e?.message || e));
+process.on('unhandledRejection', (e) => console.log('unhandledRejection:', e?.message || e));
+
 const jobs = new Map();
 const lastHit = new Map();
 const app = express();
 app.set('trust proxy', 1);
 app.use(express.static(path.join(__dirname, 'public')));
+
+// FIX 2: health route, keep-alive aur UptimeRobot ke liye
+app.get('/health', (req, res) => res.send('ok'));
 
 app.get('/api/stats', (req, res) => res.json({ bots: [...bots.values()].filter((b) => b.number).length }));
 
@@ -71,25 +79,75 @@ app.get('/api/pair', async (req, res) => {
 
 app.get('/api/status', (req, res) => res.json({ status: jobs.get(String(req.query.id || ''))?.status || 'expired' }));
 
-// Server restart par purani sessions wapas chalao
-async function restore() {
-  const env = process.env.SESSION_ID;
-  if (env && env.includes(':~')) {
+// ---------- Session restore ----------
+const starting = new Set();
+
+// creds.json padho: registered ho to number wapas do
+function readCreds(dir) {
+  try {
+    const c = JSON.parse(fs.readFileSync(path.join(dir, 'creds.json'), 'utf8'));
+    if (!c.registered) return null;
+    return { number: String(c.me?.id || '').split(':')[0].split('@')[0] };
+  } catch { return null; }
+}
+
+// FIX 3: SESSION_ID env se session folder banao (ek se zyada ho to space/comma se alag karo)
+function prepareEnvSessions() {
+  const ids = (process.env.SESSION_ID || '').split(/[\s,]+/).filter((s) => s.includes(':~'));
+  ids.forEach((v, i) => {
     try {
-      const dir = path.join(SESS, 'env');
+      const dir = path.join(SESS, i === 0 ? 'env' : 'env' + (i + 1));
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, 'creds.json'), Buffer.from(env.split(':~')[1], 'base64'));
-    } catch (e) { console.log('SESSION_ID galat hai'); }
+      if (!fs.existsSync(path.join(dir, 'creds.json'))) {
+        fs.writeFileSync(path.join(dir, 'creds.json'), Buffer.from(v.split(':~')[1], 'base64'));
+      }
+    } catch { console.log('SESSION_ID galat hai'); }
+  });
+}
+
+// FIX 4: ek bot ko start karo, lekin same number do baar kabhi nahi (double login = connection replaced loop)
+async function bringUp(name) {
+  const dir = path.join(SESS, name);
+  const info = readCreds(dir);
+  if (!info) return;
+  const key = info.number || name;
+  if (bots.has(name) || starting.has(key)) return;
+  if ([...bots.values()].some((b) => b && b.number === key)) return;
+  starting.add(key);
+  try {
+    await startBot(name, dir, { number: key });
+    console.log('Bot wapas chala:', name);
+  } catch (e) {
+    console.log('Bot start nahi hua:', name, e?.message || '');
+  } finally {
+    starting.delete(key);
   }
+}
+
+async function restore() {
+  prepareEnvSessions();
+  const seen = new Set();
   for (const name of fs.readdirSync(SESS)) {
-    const dir = path.join(SESS, name);
-    if (!fs.existsSync(path.join(dir, 'creds.json'))) continue;
-    try {
-      if (!JSON.parse(fs.readFileSync(path.join(dir, 'creds.json'), 'utf8')).registered) continue;
-      await startBot(name, dir);
-      console.log('Bot wapas chala:', name);
-    } catch (e) { console.log('Bot start nahi hua:', name); }
+    const info = readCreds(path.join(SESS, name));
+    if (!info) continue;
+    const key = info.number || name;
+    if (seen.has(key)) { console.log('Duplicate session chhodi:', name); continue; }
+    seen.add(key);
+    await bringUp(name);
     await delay(2000);
   }
 }
-app.listen(PORT, () => { console.log('Ziddi Power chal raha hai, port ' + PORT); restore(); });
+
+app.listen(PORT, () => {
+  console.log('Ziddi Power chal raha hai, port ' + PORT);
+  restore();
+
+  // FIX 5: har 3 minute check, koi bot gir gaya ho to wapas chalao
+  setInterval(() => {
+    try { for (const name of fs.readdirSync(SESS)) bringUp(name).catch(() => {}); } catch {}
+  }, 3 * 60_000);
+
+  // FIX 6: Render free plan 15 min baad sula deta hai, khud ko ping karte raho
+  const SELF = process.env.RENDER_EXTERNAL_URL;
+  if (SELF) setInterval(() => { fetch(SELF + '/health').catch(() => {}); }, 4 * 60_000);
+});
