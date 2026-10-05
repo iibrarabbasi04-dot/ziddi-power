@@ -22,7 +22,7 @@ export const CFG = {
   name: 'Ziddi Power',
   owner: 'Ziddi Boy',
   version: '1.0.0',
-  menuImage: path.join(process.cwd(), 'public', 'menu.jpg'),
+  menuImage: path.join(process.cwd(), 'public', 'images', 'IMG-20261005-WA0023.jpg'),
   channel: process.env.CHANNEL_LINK || 'https://whatsapp.com/channel/0029VbDdwnhKGGGOSd9rHl1D',
   extraOwners: (process.env.OWNER || '').split(',').map((x) => x.replace(/\D/g, '')).filter(Boolean),
 };
@@ -332,8 +332,11 @@ async function sendMenu(sock, chat, m, entry) {
   const caption = buildMenu(entry);
   const image = readMenuImage();
   const contextInfo = await channelContext(sock, entry);
-  const content = image ? { image, caption, contextInfo } : { text: caption, contextInfo };
-  return sock.sendMessage(chat, content, { quoted: m });
+  // Pehle picture (chhote caption ke saath), phir poora menu text
+  if (image) {
+    await sock.sendMessage(chat, { image, caption: `✨ *${CFG.name.toUpperCase()}* ✨\n👑 ${CFG.owner}  |  🔰 ${CFG.prefix}  |  🌐 ${entry.mode}` }, { quoted: m });
+  }
+  return sock.sendMessage(chat, { text: caption, contextInfo });
 }
 
 async function sendActivated(sock, entry) {
@@ -413,7 +416,17 @@ async function ytDownload(x, isVideo) {
   if (!given) {
     await sock.sendMessage(chat, { image: { url: v.thumbnail }, caption: `${isVideo ? '🎬' : '🎧'} *${v.title}*\n👤 ${v.author?.name || ''}\n⏱️ ${v.timestamp}\n\nDownload ho raha hai... ⏳` }, { quoted: m });
   }
-  const url = await cobaltGet(v.url, isVideo ? { videoQuality: '720' } : { downloadMode: 'audio', audioFormat: 'mp3' });
+  let url;
+  if (!isVideo && process.env.RAPIDAPI_KEY && !process.env.COBALT_API) {
+    // mp3 ke liye RapidAPI (youtube-mp36)
+    const id = v.url.match(/(?:v=|youtu\.be\/|shorts\/)([\w-]{11})/)?.[1];
+    if (!id) return reply('YouTube link sahi nahi hai.');
+    const j = await getJson('https://youtube-mp36.p.rapidapi.com/dl?id=' + id, { headers: { 'x-rapidapi-key': process.env.RAPIDAPI_KEY, 'x-rapidapi-host': 'youtube-mp36.p.rapidapi.com' } });
+    if (!j.link) throw new Error(j.msg || 'mp3 link nahi mili');
+    url = j.link;
+  } else {
+    url = await cobaltGet(v.url, isVideo ? { videoQuality: '720' } : { downloadMode: 'audio', audioFormat: 'mp3' });
+  }
   if (isVideo) return sock.sendMessage(chat, { video: { url }, caption: `🎬 ${v.title || 'Video'}\n\n_${CFG.name}_` }, { quoted: m });
   return sock.sendMessage(chat, { audio: { url }, mimetype: 'audio/mpeg', fileName: `${v.title || 'song'}.mp3` }, { quoted: m });
 }
