@@ -157,7 +157,7 @@ export async function startBot(key, dir, opts = {}) {
     version,
     logger,
     printQRInTerminal: false,
-    browser: Browsers.ubuntu('Chrome'),
+    browser: Browsers.macOS('Chrome'),
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     markOnlineOnConnect: false,
   });
@@ -174,10 +174,22 @@ export async function startBot(key, dir, opts = {}) {
     scheduleBackup(key, dir);
   });
 
+  // FIX: pairing code tab mango jab socket tayyar ho (qr event), pehle nahi
   if (!state.creds.registered && opts.onCode) {
-    await delay(2500);
-    const raw = await sock.requestPairingCode(opts.number);
-    opts.onCode(raw.match(/.{1,4}/g).join('-'));
+    let asked = false;
+    const ask = async () => {
+      if (asked) return;
+      asked = true;
+      try {
+        const raw = await sock.requestPairingCode(opts.number);
+        opts.onCode(raw.match(/.{1,4}/g).join('-'));
+      } catch (e) {
+        console.log('Pairing code error:', e?.message || e);
+        opts.onEnd?.('failed');
+      }
+    };
+    sock.ev.on('connection.update', (u) => { if (u.qr) ask(); });
+    setTimeout(ask, 6000);
   }
 
   sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
@@ -192,6 +204,7 @@ export async function startBot(key, dir, opts = {}) {
         opts.onLinked(sock, entry).catch(() => {});
       }
     } else if (connection === 'close') {
+      console.log('Connection close:', lastDisconnect?.error?.output?.statusCode, lastDisconnect?.error?.message);
       const code = lastDisconnect?.error?.output?.statusCode;
       try { sock.ev.removeAllListeners(); } catch {}
       if (entry.stopped) return;
