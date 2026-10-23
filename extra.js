@@ -104,6 +104,18 @@ export default function installExtras({ add, getJson, CFG }) {
     );
   });
 
+  // .agenton / .agentoff (seedhe on-off commands)
+  add('agenton', (x) => {
+    if (!x.isOwner) return x.reply('Sirf owner.');
+    x.entry.settings.agent = true;
+    x.reply('🤖 AI Agent ON ✅\nPrivate chats me har message ka jawab dunga.\nGroup me jab mujhe mention/reply karoge.');
+  });
+  add('agentoff', (x) => {
+    if (!x.isOwner) return x.reply('Sirf owner.');
+    x.entry.settings.agent = false;
+    x.reply('🤖 AI Agent OFF');
+  });
+
   // .movie <naam>
   add('movie', async (x) => {
     if (!x.args) return x.reply(`Aise likho: ${CFG.prefix}movie movie ka naam`);
