@@ -1,29 +1,229 @@
-<!DOCTYPE html><html lang="hi"><head><meta charset="utf-8">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05060d">
 <title>Ziddi Power</title>
-<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Hind:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css"></head><body>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --red:#ff3b4e; --blue:#3b7bff; --bg:#05060d; --card:#0b0d1a; --txt:#e8ebff; --mut:#9aa1c8; }
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  [hidden] { display:none !important; }
+  html { scroll-behavior:smooth; }
+  body {
+    min-height:100vh; color:var(--txt); font-family:'Poppins',sans-serif; background-color:var(--bg);
+    background-image:
+      radial-gradient(circle at 10% 4%, rgba(255,59,78,.28), transparent 42%),
+      radial-gradient(circle at 92% 8%, rgba(59,123,255,.28), transparent 42%),
+      radial-gradient(circle at 50% 100%, rgba(120,60,255,.18), transparent 50%),
+      repeating-linear-gradient(0deg, rgba(255,255,255,.015) 0 1px, transparent 1px 4px);
+    background-attachment:fixed; overflow-x:hidden; padding:0 16px 104px;
+  }
+  .wrap { max-width:460px; margin:0 auto; }
+
+  /* ===== Top bar ===== */
+  .top {
+    position:sticky; top:10px; z-index:20; margin-top:12px; display:flex; align-items:center; gap:10px;
+    padding:10px 14px; border-radius:16px; background:rgba(11,13,26,.85); backdrop-filter:blur(10px);
+    border:1px solid rgba(255,255,255,.1); font-size:14px; font-weight:500;
+  }
+  .top svg { width:20px; height:20px; flex:none; }
+  .top .dom { margin-left:auto; color:#8fd0ff; font-size:12px; }
+
+  /* ===== Pictures: rotating light ===== */
+  .hero { padding-top:30px; }
+  .avatars { position:relative; display:flex; justify-content:center; gap:26px; padding:20px 6px; }
+  .avatars::before, .avatars::after {
+    content:''; position:absolute; width:34px; height:34px; border:2px solid transparent; opacity:.8; animation:pulse 2.4s ease-in-out infinite;
+  }
+  .avatars::before { top:0; left:0; border-top-color:var(--red); border-left-color:var(--red); border-top-left-radius:10px; }
+  .avatars::after { bottom:0; right:0; border-bottom-color:var(--blue); border-right-color:var(--blue); border-bottom-right-radius:10px; }
+  .avatar { --c:var(--red); position:relative; width:min(38vw,160px); aspect-ratio:1; border-radius:50%; }
+  .avatar.blue { --c:var(--blue); }
+  .avatar::before {
+    content:''; position:absolute; inset:-7px; border-radius:50%;
+    background:conic-gradient(from 0deg, var(--c), transparent 30%, var(--c) 55%, transparent 80%, var(--c));
+    animation:spin 2.8s linear infinite;
+  }
+  .avatar.blue::before { animation-direction:reverse; }
+  .avatar::after {
+    content:''; position:absolute; inset:-11px; border-radius:50%;
+    box-shadow:0 0 30px var(--c), inset 0 0 20px var(--c);
+    opacity:.7; animation:pulse 2.2s ease-in-out infinite;
+  }
+  .avatar img { position:relative; z-index:1; width:100%; height:100%; border-radius:50%; object-fit:cover; border:4px solid var(--bg); display:block; background:#111; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @keyframes pulse { 0%,100% { opacity:.4; transform:scale(1); } 50% { opacity:.95; transform:scale(1.03); } }
+
+  h1 {
+    font-family:'Orbitron',sans-serif; font-weight:900; text-align:center; margin-top:26px;
+    font-size:clamp(34px,11.5vw,52px); letter-spacing:1px; line-height:1.05;
+    background:linear-gradient(90deg,var(--red),#fff 50%,var(--blue)); -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 0 14px rgba(120,100,255,.5));
+  }
+  .crew { display:flex; justify-content:center; align-items:center; gap:10px; margin-top:12px; flex-wrap:wrap; }
+  .crew span {
+    font-family:'Orbitron',sans-serif; font-weight:700; font-size:13px; letter-spacing:2px; text-transform:uppercase;
+    padding:6px 14px; border-radius:20px; border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.04);
+  }
+  .crew span:first-child { color:#ff8a96; border-color:rgba(255,59,78,.6); box-shadow:0 0 12px rgba(255,59,78,.35); }
+  .crew span:last-child { color:#8fb4ff; border-color:rgba(59,123,255,.6); box-shadow:0 0 12px rgba(59,123,255,.35); }
+  .crew i { font-style:normal; color:var(--mut); }
+  .st { display:flex; justify-content:center; align-items:center; margin-top:16px; font-size:14px; color:#8fd0ff; text-align:center; }
+  .st i { width:9px; height:9px; border-radius:50%; background:#2dff8a; margin-right:8px; box-shadow:0 0 8px #2dff8a; animation:pulse 1.6s infinite; flex:none; }
+
+  /* ===== Cards with moving light on the border ===== */
+  .card, section {
+    margin-top:18px; padding:18px; border-radius:18px; border:1.5px solid transparent;
+    background:linear-gradient(var(--card),var(--card)) padding-box,
+               linear-gradient(90deg,var(--red),var(--blue),var(--red)) border-box;
+    background-size:100% 100%, 200% 100%;
+    animation:slide 4s linear infinite; scroll-margin-top:80px;
+  }
+  @keyframes slide { from { background-position:0 0, 0% 0; } to { background-position:0 0, 200% 0; } }
+  h2 { font-size:18px; font-weight:600; margin-bottom:12px; background:linear-gradient(90deg,var(--red),var(--blue)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .devhead { display:flex; align-items:center; gap:10px; font-size:20px; font-weight:600; }
+  .devhead svg { width:26px; height:26px; }
+  .devline { margin-top:8px; font-size:14px; color:#cfd6ff; }
+  .secure { margin-top:8px; font-size:13px; color:#6fb6ff; }
+  .q { font-size:14px; line-height:1.6; color:var(--mut); }
+
+  .join, #go {
+    display:block; width:100%; margin-top:14px; padding:14px; border-radius:14px; border:0; cursor:pointer;
+    font:600 16px 'Poppins',sans-serif; color:#fff; text-align:center; text-decoration:none;
+    background:linear-gradient(90deg,var(--red),var(--blue)); background-size:200% 100%; animation:shift 5s ease-in-out infinite;
+    box-shadow:0 0 20px rgba(120,90,255,.4);
+  }
+  @keyframes shift { 0%,100% { background-position:0% 0; } 50% { background-position:100% 0; } }
+  button:disabled { opacity:.6; cursor:wait; }
+
+  /* ===== Pairing ===== */
+  .pair label { display:block; font-size:13px; color:var(--mut); margin-bottom:8px; }
+  .row { display:flex; flex-direction:column; }
+  #num {
+    width:100%; padding:14px; border-radius:12px; border:1px solid rgba(255,255,255,.18); background:#080a14; color:#fff;
+    font:500 17px 'Poppins',sans-serif; letter-spacing:1px; outline:none;
+  }
+  #num:focus { border-color:var(--blue); box-shadow:0 0 12px rgba(59,123,255,.5); }
+  .msg { margin-top:12px; font-size:13px; color:#ffcf6f; text-align:center; min-height:18px; }
+  .msg.err, .msg.error, .msg.bad { color:#ff7b88; }
+  .msg.ok, .msg.good, .msg.success { color:#5dffa5; }
+  .code {
+    margin-top:14px; display:flex; align-items:center; justify-content:space-between; gap:10px;
+    border:1px solid rgba(255,255,255,.15); border-radius:12px; padding:12px 14px; background:#080a14;
+  }
+  #codeText {
+    font-family:'Orbitron',sans-serif; font-size:clamp(22px,8vw,32px); font-weight:900; letter-spacing:2px;
+    background:linear-gradient(90deg,var(--red),var(--blue)); -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  #copy { border:0; border-radius:10px; padding:9px 14px; background:var(--red); color:#fff; font:600 13px 'Poppins',sans-serif; cursor:pointer; }
+  ol { margin:16px 0 0 18px; font-size:13px; line-height:1.7; color:var(--mut); }
+  ol b { color:#8fd0ff; }
+  ol code { background:#171a33; padding:1px 6px; border-radius:6px; color:#fff; }
+
+  /* ===== Chat preview ===== */
+  .wa { border-radius:14px; overflow:hidden; background:#080a14; border:1px solid rgba(255,255,255,.1); }
+  .bar { display:flex; align-items:center; gap:10px; padding:10px 12px; background:#10132a; }
+  .bar img { width:40px; height:40px; border-radius:50%; object-fit:cover; border:2px solid var(--red); }
+  .bar b { display:block; font-size:14px; }
+  .bar small { color:#2dff8a; font-size:12px; }
+  .msgs { padding:12px; display:flex; flex-direction:column; gap:8px; }
+  .m { max-width:82%; padding:8px 12px; border-radius:12px; font-size:13px; line-height:1.5; white-space:pre-line; }
+  .m.u { align-self:flex-end; background:linear-gradient(90deg,#c52b3b,#3563d6); }
+  .m.b { align-self:flex-start; background:#171a33; }
+  .m.pic { padding:6px; }
+  .m.pic img { display:block; width:100%; max-width:220px; border-radius:8px; margin-bottom:6px; }
+  .m em { font-style:normal; font-family:'Orbitron',sans-serif; font-weight:700; display:block; margin-bottom:2px; color:#8fd0ff; }
+
+  /* ===== Commands ===== */
+  .note { font-size:13px; color:var(--mut); line-height:1.6; }
+  .srch {
+    width:100%; margin:12px 0; padding:12px 14px; border-radius:12px; border:1px solid rgba(255,255,255,.18);
+    background:#080a14; color:#fff; font:500 15px 'Poppins',sans-serif; outline:none;
+  }
+  .srch:focus { border-color:var(--red); }
+  #list h3, #list h4, #list .t, #list .title, #list .cat { margin:16px 0 8px; font-size:13px; letter-spacing:1px; text-transform:uppercase; color:#8fd0ff; }
+  #list button, #list .c, #list .cmd, #list code, #list li, #list span.chip {
+    display:inline-block; margin:3px 4px 3px 0; padding:6px 11px; border-radius:20px; cursor:pointer;
+    font:500 13px 'Poppins',sans-serif; color:#fff; background:#171a33; border:1px solid rgba(255,255,255,.15); list-style:none;
+  }
+  #list button:active, #list .c:active, #list .cmd:active { background:var(--red); }
+
+  footer { text-align:center; margin-top:26px; font-size:12px; color:#555b7a; }
+
+  /* ===== Bottom navigation ===== */
+  .nav {
+    position:fixed; left:50%; transform:translateX(-50%); bottom:calc(10px + env(safe-area-inset-bottom)); z-index:30;
+    width:min(calc(100% - 28px),432px); display:flex; justify-content:space-around; padding:8px 6px; border-radius:20px;
+    background:rgba(11,13,26,.92); backdrop-filter:blur(12px); border:1px solid rgba(255,255,255,.12); box-shadow:0 0 24px rgba(120,90,255,.25);
+  }
+  .nav a { display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 10px; border-radius:12px; color:var(--mut); font-size:11px; text-decoration:none; }
+  .nav a:active, .nav a:first-child { color:#fff; }
+  .nav svg { width:24px; height:24px; stroke:url(#grad); }
+
+  @media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation:none !important; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff3b4e"/><stop offset="1" stop-color="#3b7bff"/></linearGradient></defs></svg>
+<div class="wrap" id="top">
+
+<div class="top">
+  <svg viewBox="0 0 24 24" fill="none" stroke="url(#grad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg>
+  <span>Ziddi Power</span><span class="dom">Official Pairing Site</span>
+</div>
+
 <header class="hero">
-<div class="pic"><img alt="Ziddi Boy" src="images/ziddi.jpg"></div>
-<div class="txt"><h1>Ziddi<br>Power</h1>
-<p class="q">If you want to conquer fear, don't sit home and think about it. Go out and get busy.</p>
-<div class="st"><i></i><span id="stat">WhatsApp Bot · Online</span></div><br><a class="join" href="https://whatsapp.com/channel/0029VbDdwnhKGGGOSd9rHl1D" target="_blank" rel="noopener">WhatsApp Channel join karo</a></div>
+  <div class="avatars">
+    <div class="avatar"><img alt="Anjan and Ziddi" src="images/pic1.jpg"></div>
+    <div class="avatar blue"><img alt="Anjan x Ziddi x Syco" src="images/pic2.jpg"></div>
+  </div>
+  <h1>ZIDDI POWER</h1>
+  <div class="crew"><span>Anjan</span><i>•</i><span>Bad Munda</span></div>
+  <div class="st"><i></i><span id="stat">WhatsApp Bot • AI Automation • Online</span></div>
 </header>
-<section><h2>Chat preview</h2>
-<div class="wa"><div class="bar"><img alt="" src="images/ziddi.jpg"><div><b>Ziddi Power</b><small>online</small></div></div>
-<div class="msgs"><div class="m u">.menu</div>
-<div class="m b"><em>ZIDDI POWER</em>
-Owner: Ziddi Boy
-Commands: .sticker · .qr · .tagall · .calc</div>
-<div class="m u">.sticker</div><div class="m b">Sticker ban gaya ✅</div></div></div></section>
-<section id="pair"><h2>Bot pairing</h2>
-<div class="pair"><label for="num">WhatsApp number (country code ke saath, + ke bina)</label>
-<div class="row"><input id="num" inputmode="numeric" placeholder="923001234567"><button id="go">Pair code lo</button></div>
-<div class="msg" id="pm" aria-live="polite">Number likho aur button dabao.</div>
+
+<div class="card">
+  <div class="devhead"><svg viewBox="0 0 24 24" fill="none" stroke="url(#grad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1"/><path d="M14 10a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1"/></svg>Pair Your Device</div>
+  <p class="devline">Status: Connected &amp; Ready</p>
+  <p class="secure">&#10004; Secure • Encrypted</p>
+</div>
+
+<section id="pair"><h2>Pairing Code</h2>
+<div class="pair"><label for="num">WhatsApp number with country code, without the + sign</label>
+<div class="row"><input id="num" inputmode="numeric" placeholder="923001234567"><button id="go">Get Pairing Code</button></div>
+<div class="msg" id="pm" aria-live="polite">Enter your number and tap the button.</div>
 <div class="code" id="code" hidden><span id="codeText"></span><button id="copy" type="button">Copy</button></div>
-<ol><li>Code aane par WhatsApp kholo: Linked devices, phir <b>Link with phone number</b></li><li>Ye code dalo, bot usi number par chalu ho jayega (alag se koi setup nahi)</li><li>Link hote hi <b>SESSION_ID</b> usi WhatsApp me aa jayegi aur channel auto follow ho jayega</li><li>WhatsApp me <code>.menu</code> likh kar test karo</li></ol></div></section>
-<section><h2>Commands</h2>
-<p class="note">Prefix <b>.</b> hai. Kisi command par tap karo, copy ho jayegi. Ye wahi commands hain jo bot me sach me hain.</p>
-<input class="srch" id="q" placeholder="Command dhundo..." aria-label="Command dhundo"><div id="list"></div></section>
+<ol><li>When the code appears, open WhatsApp: Linked devices, then <b>Link with phone number</b></li><li>Enter the code. The bot starts on that same number (no other setup needed)</li><li>Once linked, your <b>SESSION_ID</b> arrives in the same WhatsApp and the channel is followed automatically</li><li>Send <code>.menu</code> in WhatsApp to test</li></ol></div></section>
+
+<div class="card">
+  <p class="q">If you want to conquer fear, don't sit home and think about it. Go out and get busy.</p>
+  <a class="join" href="https://whatsapp.com/channel/0029VbDdwnhKGGGOSd9rHl1D" target="_blank" rel="noopener">Join our WhatsApp Channel</a>
+</div>
+
+<section id="preview"><h2>Chat Preview</h2>
+<div class="wa"><div class="bar"><img alt="" src="images/pic1.jpg"><div><b>Ziddi Power</b><small>online</small></div></div>
+<div class="msgs"><div class="m u">.menu</div>
+<div class="m b pic"><img alt="" src="images/pic2.jpg"><em>ZIDDI POWER</em>Owner: Ziddi Boy
+Commands: .sticker · .qr · .tagall · .calc</div>
+<div class="m u">.sticker</div><div class="m b">Sticker created ✅</div></div></div></section>
+
+<section id="cmds"><h2>Commands</h2>
+<p class="note">The prefix is <b>.</b> Tap any command to copy it. These are the commands the bot really has.</p>
+<input class="srch" id="q" placeholder="Search commands..." aria-label="Search commands"><div id="list"></div></section>
+
 <footer>Ziddi Power · Made by Ziddi Boy</footer>
-<script src="script.js"></script></body></html>
+</div>
+
+<nav class="nav" aria-label="Main">
+  <a href="#top"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>Home</a>
+  <a href="#pair"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1"/><path d="M14 10a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1"/></svg>Pair</a>
+  <a href="#preview"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 01-11.5 7.2L4 20l1-4.5A8 8 0 1121 12z"/></svg>Chat</a>
+  <a href="#cmds"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>Commands</a>
+</nav>
+
+<script src="script.js"></script>
+</body>
+</html>
