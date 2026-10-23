@@ -1,3 +1,4 @@
+
 // Ziddi Power - bot ka code
 import fs from 'fs';
 import installExtras from './extras.js';
@@ -29,6 +30,10 @@ export const CFG = {
 };
 const CHANNEL_CODE = CFG.channel.split('/channel/')[1];
 const logger = pino({ level: 'silent' });
+// Render Logs mein errors dikhane ke liye (pehle sab chup chap nigal liye jate the)
+const logErr = (where, e) => console.error('[ZP-ERR] ' + where + ': ' + (e?.stack || e?.message || e));
+process.on('unhandledRejection', (e) => logErr('unhandledRejection', e));
+process.on('uncaughtException', (e) => logErr('uncaughtException', e));
 export const bots = new Map();
 
 const norm = (j) => (j || '').split(':')[0].split('@')[0];
@@ -231,7 +236,7 @@ export async function startBot(key, dir, opts = {}) {
 
   sock.ev.on('messages.upsert', ({ messages, type }) => {
     if (type !== 'notify') return;
-    for (const m of messages) handle(sock, entry, m).catch(() => {});
+    for (const m of messages) handle(sock, entry, m).catch((e) => logErr('handle', e));
   });
   return sock;
 }
@@ -329,7 +334,24 @@ function buildMenu(entry) {
   return t.trimEnd();
 }
 
-const readMenuImage = () => { try { return fs.readFileSync(CFG.menuImage); } catch { return null; } };
+// Menu picture: pehle asli naam, nahi mili to public/images ya images folder ki koi bhi pehli picture
+const IMG_RE = /\.(jpe?g|png|webp)$/i;
+function readMenuImage() {
+  const roots = [process.cwd(), path.dirname(new URL(import.meta.url).pathname)];
+  const tried = [CFG.menuImage];
+  for (const r of roots) tried.push(path.join(r, 'public', 'images', path.basename(CFG.menuImage)));
+  for (const f of tried) { try { return fs.readFileSync(f); } catch {} }
+  for (const r of roots) {
+    for (const d of [path.join(r, 'public', 'images'), path.join(r, 'images'), path.join(r, 'public')]) {
+      try {
+        const f = fs.readdirSync(d).filter((n) => IMG_RE.test(n)).sort()[0];
+        if (f) { console.warn('[ZP] menu image asli naam se nahi mili, ye use ki: ' + path.join(d, f)); return fs.readFileSync(path.join(d, f)); }
+      } catch {}
+    }
+  }
+  console.warn('[ZP] menu image kahin nahi mili. Dhoondi gayi jagah: ' + tried.join(' | '));
+  return null;
+}
 
 async function channelContext(sock, entry) {
   try {
@@ -348,7 +370,8 @@ async function sendMenu(sock, chat, m, entry) {
   const contextInfo = await channelContext(sock, entry);
   // Pehle picture (chhote caption ke saath), phir poora menu text
   if (image) {
-    await sock.sendMessage(chat, { image, caption: `✨ *${CFG.name.toUpperCase()}* ✨\n👑 ${CFG.owner}  |  🔰 ${CFG.prefix}  |  🌐 ${entry.mode}` }, { quoted: m });
+    try { await sock.sendMessage(chat, { image, caption: `✨ *${CFG.name.toUpperCase()}* ✨\n👑 ${CFG.owner}  |  🔰 ${CFG.prefix}  |  🌐 ${entry.mode}` }, { quoted: m }); }
+    catch (e) { logErr('menu image send', e); }
   }
   return sock.sendMessage(chat, { text: caption, contextInfo });
 }
@@ -417,6 +440,31 @@ async function cobaltGet(link, body = {}) {
   return j.url;
 }
 
+// Media bhejne se pehle file khud download karte hain (size/time check ke saath), phir WhatsApp ko buffer dete hain
+const MAX_MB = Number(process.env.MAX_MEDIA_MB || 45);
+async function fetchBuffer(url, ms = 120000) {
+  const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(ms) });
+  if (!r.ok) throw new Error('File download nahi hui (' + r.status + ')');
+  const len = Number(r.headers.get('content-length') || 0);
+  if (len > MAX_MB * 1048576) throw new Error(`File bohat bari hai (${Math.round(len / 1048576)}MB). ${MAX_MB}MB tak hi bhej sakta hoon.`);
+  const buf = Buffer.from(await r.arrayBuffer());
+  if (buf.length > MAX_MB * 1048576) throw new Error(`File bohat bari hai (${Math.round(buf.length / 1048576)}MB). ${MAX_MB}MB tak hi bhej sakta hoon.`);
+  if (buf.length < 2000) throw new Error('Download ki hui file kharab/khali hai');
+  return buf;
+}
+
+// Audio ka pehla zariya (optional): Saavn jaisi API. Render mein SAAVN_API set karo, misal: https://saavn.dev/api/search/songs
+async function saavnAudio(query) {
+  const api = process.env.SAAVN_API;
+  if (!api) return null;
+  const j = await getJson(api + (api.includes('?') ? '&' : '?') + 'query=' + encodeURIComponent(query) + '&limit=1');
+  const it = j?.data?.results?.[0] || j?.results?.[0] || (Array.isArray(j?.data) ? j.data[0] : null);
+  const dl = it?.downloadUrl;
+  const url = Array.isArray(dl) ? (dl[dl.length - 1]?.url || dl[dl.length - 1]?.link) : (typeof dl === 'string' ? dl : null);
+  if (!url) return null;
+  return { url, title: it.name || it.title || query };
+}
+
 // YouTube: song / video (naam ya link se)
 async function ytDownload(x, isVideo) {
   const { sock, chat, m, args, reply, cmd } = x;
@@ -428,21 +476,39 @@ async function ytDownload(x, isVideo) {
   const maxSec = isVideo ? 900 : 1800;
   if (v.seconds > maxSec) return reply(`Ye bohat lamba hai (${v.timestamp}). ${isVideo ? '15' : '30'} minute tak ki hi milegi.`);
   if (!given) {
-    await sock.sendMessage(chat, { image: { url: v.thumbnail }, caption: `${isVideo ? '🎬' : '🎧'} *${v.title}*\n👤 ${v.author?.name || ''}\n⏱️ ${v.timestamp}\n\nDownload ho raha hai... ⏳` }, { quoted: m });
+    try { await sock.sendMessage(chat, { image: { url: v.thumbnail }, caption: `${isVideo ? '🎬' : '🎧'} *${v.title}*\n👤 ${v.author?.name || ''}\n⏱️ ${v.timestamp}\n\nDownload ho raha hai... ⏳` }, { quoted: m }); } catch (e) { logErr('thumbnail', e); }
   }
-  let url;
-  if (!isVideo && process.env.RAPIDAPI_KEY && !process.env.COBALT_API) {
-    // mp3 ke liye RapidAPI (youtube-mp36)
-    const id = v.url.match(/(?:v=|youtu\.be\/|shorts\/)([\w-]{11})/)?.[1];
-    if (!id) return reply('YouTube link sahi nahi hai.');
-    const j = await getJson('https://youtube-mp36.p.rapidapi.com/dl?id=' + id, { headers: { 'x-rapidapi-key': process.env.RAPIDAPI_KEY, 'x-rapidapi-host': 'youtube-mp36.p.rapidapi.com' } });
-    if (!j.link) throw new Error(j.msg || 'mp3 link nahi mili');
-    url = j.link;
-  } else {
-    url = await cobaltGet(v.url, isVideo ? { videoQuality: '720' } : { downloadMode: 'audio', audioFormat: 'mp3' });
+  const tries = [];
+  // Audio: pehle Saavn (agar set ho), phir RapidAPI, phir Cobalt
+  if (!isVideo && !given) {
+    tries.push(async () => { const a = await saavnAudio(v.title || args); if (!a) throw new Error('Saavn par nahi mila'); return a.url; });
   }
-  if (isVideo) return sock.sendMessage(chat, { video: { url }, caption: `🎬 ${v.title || 'Video'}\n\n_${CFG.name}_` }, { quoted: m });
-  return sock.sendMessage(chat, { audio: { url }, mimetype: 'audio/mpeg', fileName: `${v.title || 'song'}.mp3` }, { quoted: m });
+  if (!isVideo && process.env.RAPIDAPI_KEY) {
+    tries.push(async () => {
+      const id = v.url.match(/(?:v=|youtu\.be\/|shorts\/)([\w-]{11})/)?.[1];
+      if (!id) throw new Error('YouTube link sahi nahi hai.');
+      const j = await getJson('https://youtube-mp36.p.rapidapi.com/dl?id=' + id, { headers: { 'x-rapidapi-key': process.env.RAPIDAPI_KEY, 'x-rapidapi-host': 'youtube-mp36.p.rapidapi.com' } });
+      if (!j.link) throw new Error(j.msg || 'mp3 link nahi mili');
+      return j.link;
+    });
+  }
+  if (process.env.COBALT_API) {
+    tries.push(() => cobaltGet(v.url, isVideo ? { videoQuality: process.env.VIDEO_QUALITY || '480' } : { downloadMode: 'audio', audioFormat: 'mp3' }));
+  }
+  if (!tries.length) return reply('Download ka koi zariya set nahi hai. Owner ko Render > Environment mein COBALT_API (ya SAAVN_API / RAPIDAPI_KEY) set karna hoga.');
+  let buf, lastErr;
+  for (const t of tries) {
+    try { const url = await t(); buf = await fetchBuffer(url); break; }
+    catch (e) { lastErr = e; logErr('download try', e); }
+  }
+  if (!buf) return reply('Download nahi ho saka ❌\nWajah: ' + (lastErr?.message || 'unknown'));
+  try {
+    if (isVideo) return await sock.sendMessage(chat, { video: buf, mimetype: 'video/mp4', caption: `🎬 ${v.title || 'Video'}\n\n_${CFG.name}_` }, { quoted: m });
+    return await sock.sendMessage(chat, { audio: buf, mimetype: 'audio/mpeg', fileName: `${v.title || 'song'}.mp3` }, { quoted: m });
+  } catch (e) {
+    logErr('media send', e);
+    return reply('File WhatsApp par bhej nahi saka ❌ (' + (e?.message || 'unknown') + ')');
+  }
 }
 
 async function tiktokDl(x) {
@@ -480,9 +546,43 @@ async function aioDl(x) {
 }
 
 // ---------- AI / misc helpers ----------
+const AI_SYSTEM = process.env.AI_SYSTEM || 'You are Ziddi Power, a friendly WhatsApp assistant. Reply in the same language/style as the user (Roman Urdu/Hindi/English), short and helpful.';
 async function aiText(prompt) {
-  const t = await getText('https://text.pollinations.ai/' + encodeURIComponent(prompt));
-  return t.trim();
+  const errs = [];
+  // 1) Agar owner ne Render mein apni key di ho (OpenAI-jaisi API): AI_API_URL, AI_API_KEY, AI_MODEL
+  if (process.env.AI_API_URL && process.env.AI_API_KEY) {
+    try {
+      const j = await getJson(process.env.AI_API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.AI_API_KEY }, body: JSON.stringify({ model: process.env.AI_MODEL || 'gpt-4o-mini', messages: [{ role: 'system', content: AI_SYSTEM }, { role: 'user', content: prompt }] }) });
+      const t = j?.choices?.[0]?.message?.content;
+      if (t) return t.trim();
+      errs.push('custom API: khali jawab');
+    } catch (e) { errs.push('custom API: ' + e.message); }
+  }
+  // 1b) Free Google Gemini key (aistudio.google.com): Render mein GEMINI_API_KEY (aur chaho to GEMINI_MODEL) set karo
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+      const j = await getJson(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ systemInstruction: { parts: [{ text: AI_SYSTEM }] }, contents: [{ role: 'user', parts: [{ text: prompt }] }] }) });
+      const t = j?.candidates?.[0]?.content?.parts?.map((x) => x.text).join('');
+      if (t) return t.trim();
+      errs.push('gemini: khali jawab');
+    } catch (e) { errs.push('gemini: ' + e.message); }
+  }
+  // 2) Pollinations (POST, phir GET)
+  try {
+    const j = await getJson('https://text.pollinations.ai/openai', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(process.env.POLLINATIONS_KEY ? { Authorization: 'Bearer ' + process.env.POLLINATIONS_KEY } : {}) }, body: JSON.stringify({ model: 'openai', messages: [{ role: 'system', content: AI_SYSTEM }, { role: 'user', content: prompt }] }) });
+    const t = j?.choices?.[0]?.message?.content;
+    if (t) return t.trim();
+    errs.push('pollinations POST: khali jawab');
+  } catch (e) { errs.push('pollinations POST: ' + e.message); }
+  try {
+    const t = (await getText('https://text.pollinations.ai/' + encodeURIComponent(prompt) + '?system=' + encodeURIComponent(AI_SYSTEM))).trim();
+    if (t && !/^\s*[{<]/.test(t)) return t;
+    errs.push('pollinations GET: ajeeb jawab');
+  } catch (e) { errs.push('pollinations GET: ' + e.message); }
+  const err = new Error('AI service jawab nahi de rahi (' + errs.join(' | ') + ')');
+  logErr('aiText', err);
+  throw err;
 }
 function ffmpeg(input, args, outExt) {
   const tmpIn = path.join(os.tmpdir(), 'zp_' + Date.now() + '_in');
@@ -990,8 +1090,8 @@ async function handle(sock, entry, m) {
   }
 
   if (!text.startsWith(CFG.prefix)) {
-    if (S.autochat && !S.agent && !isGroup && !m.key.fromMe && text) { try { await reply(await aiText(text)); } catch {} }
-    if (S.agent && !m.key.fromMe && text) { try { await globalThis.zpAgent?.({ sock, entry, m, msg, chat, isGroup, text, reply }); } catch {} }
+    if (S.autochat && !S.agent && !isGroup && !m.key.fromMe && text) { try { await reply(await aiText(text)); } catch (e) { logErr('autochat', e); try { await reply('Abhi AI busy hai, thori der baad try karo 🙏'); } catch {} } }
+    if (S.agent && !m.key.fromMe && text) { try { await globalThis.zpAgent?.({ sock, entry, m, msg, chat, isGroup, text, reply }); } catch (e) { logErr('agent', e); } }
     return;
   }
   const [cmdRaw, ...rest] = text.slice(CFG.prefix.length).trim().split(/\s+/);
@@ -1104,6 +1204,7 @@ async function handle(sock, entry, m) {
       }
     }
   } catch (e) {
+    logErr('command .' + cmd, e);
     return reply('Command fail hui: ' + (e?.message || 'unknown error'));
   }
 }
