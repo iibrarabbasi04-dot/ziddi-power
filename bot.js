@@ -1,5 +1,6 @@
 // Ziddi Power - bot ka code
 import fs from 'fs';
+import installExtras from './extras.js';
 import path from 'path';
 import os from 'os';
 import pino from 'pino';
@@ -263,7 +264,7 @@ const MENU = {
   ISLAMIC: w(`dua_forgiveness dua_rizq dua_guidance dua_health zikr_astaghfirullah zikr_alhamdulillah zikr_subhanallah
     zikr_allahuakbar zikr_lailahaillallah zikr_lahawla hadith_good_morals hadith_cleanliness hadith_truth hadith_patience
     darood_sharif kalima_tayyiba islam_fact quran_reminder naat`),
-  AI: w(`autochat ai ai2 gemini qwen heckai sonu3 imagine tts2 editimg photoedit clearchat nsfwcheck`),
+  AI: w(`autochat agent agenton agentoff ai ai2 gemini qwen heckai sonu3 imagine tts2 editimg photoedit clearchat nsfwcheck`),
   DOWNLOADER: w(`song play video yta ytmp3 ytmp4 ytvideo videot video2 video3 mv tiktok tt aio fb igdl igdl2 igdl3
     soundcloud spotify capcut playch dafont drama mlfbd movie apk baiscopes thenkiri drama65 moviebox cinesubz
     sinhalasub movie3 song2 song65 tts`),
@@ -912,7 +913,7 @@ add('botname', (x) => { if (!x.isOwner) return x.reply('Sirf owner.'); if (x.arg
 add('ownername', (x) => { if (!x.isOwner) return x.reply('Sirf owner.'); if (x.args) CFG.owner = x.args; x.reply('Owner name: ' + CFG.owner); });
 add('settings', (x) => {
   const s = x.entry.settings;
-  x.reply(`⚙️ *Settings*\nMode: ${x.entry.mode}\nPrefix: ${CFG.prefix}\n` + ['autoread', 'autotyping', 'recording', 'statusview', 'statuslike', 'anticall', 'autoreact', 'online', 'autochat'].map((k) => `${k}: ${s[k] ? 'ON' : 'OFF'}`).join('\n'));
+  x.reply(`⚙️ *Settings*\nMode: ${x.entry.mode}\nPrefix: ${CFG.prefix}\n` + ['autoread', 'autotyping', 'recording', 'statusview', 'statuslike', 'anticall', 'autoreact', 'online', 'autochat', 'agent'].map((k) => `${k}: ${s[k] ? 'ON' : 'OFF'}`).join('\n'));
 });
 add(/* unban templates */ range('unban', 100, 2).concat('unban'), (x) => x.reply(`Support ko ye message bhejo (support@whatsapp.com):\n\n"Hello WhatsApp Team, my number ${x.args || '+XX XXXXXXXXXX'} was banned by mistake. I use WhatsApp only for personal chats and follow the Terms of Service. Please review and restore my account. Thank you."`));
 
@@ -989,7 +990,8 @@ async function handle(sock, entry, m) {
   }
 
   if (!text.startsWith(CFG.prefix)) {
-    if (S.autochat && !isGroup && !m.key.fromMe && text) { try { await reply(await aiText(text)); } catch {} }
+    if (S.autochat && !S.agent && !isGroup && !m.key.fromMe && text) { try { await reply(await aiText(text)); } catch {} }
+    if (S.agent && !m.key.fromMe && text) { try { await globalThis.zpAgent?.({ sock, entry, m, msg, chat, isGroup, text, reply }); } catch {} }
     return;
   }
   const [cmdRaw, ...rest] = text.slice(CFG.prefix.length).trim().split(/\s+/);
@@ -1106,4 +1108,5 @@ async function handle(sock, entry, m) {
   }
 }
 
+installExtras({ add, getJson, CFG });
 restoreAll().catch(() => {});
